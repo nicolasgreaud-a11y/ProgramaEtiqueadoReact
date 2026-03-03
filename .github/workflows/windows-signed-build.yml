@@ -1,0 +1,49 @@
+name: Windows Signed Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    env:
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Decode signing certificate
+        shell: pwsh
+        env:
+          CSC_LINK_B64: ${{ secrets.CSC_LINK_B64 }}
+        run: |
+          if (-not $env:CSC_LINK_B64) {
+            throw "Missing secret CSC_LINK_B64"
+          }
+          $bytes = [Convert]::FromBase64String($env:CSC_LINK_B64)
+          $path = Join-Path $env:RUNNER_TEMP "codesign.p12"
+          [IO.File]::WriteAllBytes($path, $bytes)
+          "CSC_LINK=$path" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build signed NSIS installer
+        run: npm run desktop:build:win
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-signed-installer
+          path: |
+            release/win/*.exe
+            release/win/*.blockmap
