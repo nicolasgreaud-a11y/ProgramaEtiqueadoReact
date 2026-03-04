@@ -94,3 +94,14 @@ Sin certificado de firma, los avisos de antivirus no se pueden evitar de forma c
 - `src/hooks`: estado de dataset y anotaciones
 - `src/services/exporters`: generacion de manifest YOLO + zip
 - `src/utils`: utilidades de geometria, color y descarga
+
+## Implementaciones
+
+La app ahora tiene selector de implementacion en la barra superior:
+- `Local`: flujo actual (carga, importacion y exportacion ZIP funcionando).
+- `API (futuro)`: interfaz preparada para conectar backend remoto.
+
+Archivos de implementacion:
+- `src/services/implementations/localImplementation.js`
+- `src/services/implementations/apiImplementation.js`
+- `src/services/implementations/index.js`

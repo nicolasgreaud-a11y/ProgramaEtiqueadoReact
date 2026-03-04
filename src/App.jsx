@@ -3,14 +3,15 @@ import ImageCanvas from "./components/ImageCanvas";
 import Sidebar from "./components/Sidebar";
 import Toolbar from "./components/Toolbar";
 import { useDataset } from "./hooks/useDataset";
-import { exportDatasetZip } from "./services/exporters/zipExporter";
-import { triggerDownload } from "./utils/file";
+import { getImplementationById, IMPLEMENTATIONS } from "./services/implementations";
 
 export default function App() {
   const dataset = useDataset();
   const [tool, setTool] = useState("box");
+  const [implementationId, setImplementationId] = useState("local");
   const [isExporting, setIsExporting] = useState(false);
   const [status, setStatus] = useState("");
+  const implementation = getImplementationById(implementationId);
 
   useEffect(() => {
     function onKeyDown(event) {
@@ -43,19 +44,8 @@ export default function App() {
     try {
       setIsExporting(true);
       setStatus("");
-
-      const blob = await exportDatasetZip({
-        projectName: dataset.projectName,
-        images: dataset.images,
-        classes: dataset.classes,
-        annotationsByImage: dataset.annotationsByImage,
-        classIndexById: dataset.classIndexById,
-        selectedImageId: dataset.selectedImageId,
-        progress: dataset.progress
-      });
-
-      triggerDownload(blob, `${dataset.projectName || "dataset-yolo"}.zip`);
-      setStatus("ZIP exportado correctamente.");
+      const result = await implementation.exportDataset(dataset);
+      setStatus(result?.message || "Operacion completada.");
     } catch (error) {
       setStatus(error?.message || "No se pudo exportar el dataset.");
     } finally {
@@ -65,7 +55,7 @@ export default function App() {
 
   async function handleImportDataset(fileList) {
     try {
-      const result = await dataset.importDataset(fileList);
+      const result = await implementation.importDataset(dataset, fileList);
       setStatus(
         `Dataset importado: ${result.images} imagenes, ${result.classes} clases, ${result.masks} mascaras recuperadas.`
       );
@@ -81,8 +71,23 @@ export default function App() {
         setProjectName={dataset.setProjectName}
         tool={tool}
         setTool={setTool}
-        onUploadImages={dataset.addImages}
-        onUploadFolder={dataset.addImages}
+        implementationId={implementationId}
+        implementationOptions={IMPLEMENTATIONS}
+        onChangeImplementation={(nextId) => {
+          setImplementationId(nextId);
+          const next = getImplementationById(nextId);
+          setStatus(`Implementacion activa: ${next.label}. ${next.description}`);
+        }}
+        onUploadImages={(fileList) =>
+          implementation.uploadImages(dataset, fileList).catch((error) => {
+            setStatus(error?.message || "No se pudieron cargar imagenes.");
+          })
+        }
+        onUploadFolder={(fileList) =>
+          implementation.uploadFolder(dataset, fileList).catch((error) => {
+            setStatus(error?.message || "No se pudo cargar la carpeta.");
+          })
+        }
         onImportDataset={handleImportDataset}
         onExport={handleExport}
         isExporting={isExporting}

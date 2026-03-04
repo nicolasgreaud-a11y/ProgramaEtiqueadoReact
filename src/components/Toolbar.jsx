@@ -5,6 +5,9 @@ export default function Toolbar({
   setProjectName,
   tool,
   setTool,
+  implementationId,
+  implementationOptions,
+  onChangeImplementation,
   onUploadImages,
   onUploadFolder,
   onImportDataset,
@@ -54,6 +57,24 @@ export default function Toolbar({
             Mascara
           </button>
         </div>
+      </div>
+
+      <div className="toolbar-group">
+        <label className="field-label" htmlFor="implementation-select">
+          Implementacion
+        </label>
+        <select
+          id="implementation-select"
+          className="input"
+          value={implementationId}
+          onChange={(event) => onChangeImplementation(event.target.value)}
+        >
+          {implementationOptions.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="toolbar-group toolbar-right">
