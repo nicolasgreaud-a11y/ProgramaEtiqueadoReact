@@ -7,12 +7,14 @@ export default function Toolbar({
   setTool,
   onUploadImages,
   onUploadFolder,
+  onImportDataset,
   onExport,
   isExporting,
   progress
 }) {
   const fileInputRef = useRef(null);
   const folderInputRef = useRef(null);
+  const importInputRef = useRef(null);
 
   function handleFiles(event) {
     onUploadImages(event.target.files);
@@ -76,11 +78,26 @@ export default function Toolbar({
           }}
           hidden
         />
+        <input
+          ref={importInputRef}
+          type="file"
+          multiple
+          webkitdirectory=""
+          directory=""
+          onChange={(event) => {
+            onImportDataset(event.target.files);
+            event.target.value = "";
+          }}
+          hidden
+        />
         <button className="btn" type="button" onClick={() => fileInputRef.current?.click()}>
           Cargar imagenes
         </button>
         <button className="btn" type="button" onClick={() => folderInputRef.current?.click()}>
           Cargar carpeta
+        </button>
+        <button className="btn" type="button" onClick={() => importInputRef.current?.click()}>
+          Importar dataset
         </button>
         <button className="btn primary" type="button" onClick={onExport} disabled={isExporting}>
           {isExporting ? "Exportando..." : "Exportar ZIP"}

@@ -63,6 +63,17 @@ export default function App() {
     }
   }
 
+  async function handleImportDataset(fileList) {
+    try {
+      const result = await dataset.importDataset(fileList);
+      setStatus(
+        `Dataset importado: ${result.images} imagenes, ${result.classes} clases, ${result.masks} mascaras recuperadas.`
+      );
+    } catch (error) {
+      setStatus(error?.message || "No se pudo importar el dataset.");
+    }
+  }
+
   return (
     <div className="app-shell">
       <Toolbar
@@ -72,6 +83,7 @@ export default function App() {
         setTool={setTool}
         onUploadImages={dataset.addImages}
         onUploadFolder={dataset.addImages}
+        onImportDataset={handleImportDataset}
         onExport={handleExport}
         isExporting={isExporting}
         progress={dataset.progress}

@@ -86,6 +86,7 @@ Sin certificado de firma, los avisos de antivirus no se pueden evitar de forma c
    - `Caja`: click y arrastre.
    - `Mascara`: clics para puntos, luego `Cerrar mascara` o tecla `Enter`.
 4. Exporta con `Exportar ZIP`.
+5. Para continuar en otro equipo: descomprime el ZIP y usa `Importar dataset` seleccionando la carpeta exportada.
 
 ## Estructura del proyecto
 

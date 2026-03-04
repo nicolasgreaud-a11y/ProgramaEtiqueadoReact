@@ -80,7 +80,7 @@ export default function Sidebar({
 
       <section className="panel">
         <h2>Anotaciones imagen</h2>
-        <div className="list">
+        <div className="list list-annotations">
           {selectedAnnotations.boxes.map((box) => (
             <div key={box.id} className="list-item">
               <span>

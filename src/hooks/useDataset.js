@@ -92,7 +92,7 @@ export function useDataset() {
 
   async function addImages(fileList) {
     const files = Array.from(fileList ?? [])
-      .filter((file) => file.type.startsWith("image/"))
+      .filter((file) => isImageFile(file))
       .sort((a, b) => {
         const aPath = a.webkitRelativePath || a.name;
         const bPath = b.webkitRelativePath || b.name;
@@ -138,6 +138,193 @@ export function useDataset() {
       });
       return next;
     });
+  }
+
+  async function importDataset(fileList) {
+    const files = Array.from(fileList ?? []);
+    if (!files.length) {
+      throw new Error("No se han recibido archivos para importar.");
+    }
+
+    const indexedFiles = files
+      .map((file) => ({
+        file,
+        path: normalizePath(file.webkitRelativePath || file.name)
+      }))
+      .sort((a, b) => a.path.localeCompare(b.path));
+
+    const rootPrefix = detectDatasetRoot(indexedFiles.map((item) => item.path));
+    const entriesByPath = new Map(indexedFiles.map((item) => [item.path, item.file]));
+
+    const annotationsFile =
+      entriesByPath.get(joinPath(rootPrefix, "annotations.json")) ||
+      findFileBySuffix(indexedFiles, "/annotations.json");
+    const detectionYamlFile =
+      entriesByPath.get(joinPath(rootPrefix, "dataset-detection.yaml")) ||
+      findFileBySuffix(indexedFiles, "/dataset-detection.yaml") ||
+      findFileBySuffix(indexedFiles, "/dataset-segmentation.yaml") ||
+      findFileBySuffix(indexedFiles, "/data.yaml");
+    const configFile =
+      entriesByPath.get(joinPath(rootPrefix, ".config")) ||
+      findFileBySuffix(indexedFiles, "/.config");
+
+    const annotationsMeta = annotationsFile ? safeParseJson(await annotationsFile.text()) : null;
+    const summaryByOutputImage = new Map(
+      (annotationsMeta?.summary ?? []).map((item) => [item.outputImage, item.image])
+    );
+
+    let classNames =
+      annotationsMeta?.classes
+        ?.map((item) => (typeof item === "string" ? item : item?.name))
+        .filter(Boolean) ?? [];
+    if (!classNames.length && detectionYamlFile) {
+      const parsed = parseClassNamesFromYaml(await detectionYamlFile.text());
+      classNames = parsed;
+    }
+
+    const datasetImages = indexedFiles.map((item) => parseDatasetImageEntry(item)).filter(Boolean);
+
+    if (!datasetImages.length) {
+      const sample = indexedFiles
+        .slice(0, 6)
+        .map((item) => item.path)
+        .join(" | ");
+      throw new Error(
+        `No se encontraron imagenes importables. Selecciona la carpeta raiz del export. Muestra de rutas leidas: ${sample}`
+      );
+    }
+
+    const parsedItems = [];
+    let highestClassIndex = -1;
+
+    for (const imgItem of datasetImages) {
+      const imageUrl = URL.createObjectURL(imgItem.file);
+      const dims = await readImageDimensions(imageUrl);
+      URL.revokeObjectURL(imageUrl);
+
+      const detectionContent = await getFirstExistingText(entriesByPath, [
+        joinPath(rootPrefix, `labels/detection/${imgItem.split}/${imgItem.baseName}.txt`),
+        joinPath(rootPrefix, `labels/detection/${imgItem.baseName}.txt`),
+        joinPath(rootPrefix, `labels/${imgItem.split}/${imgItem.baseName}.txt`),
+        joinPath(rootPrefix, `labels/${imgItem.baseName}.txt`)
+      ]);
+      const segmentationContent = await getFirstExistingText(entriesByPath, [
+        joinPath(rootPrefix, `labels/segmentation/${imgItem.split}/${imgItem.baseName}.txt`),
+        joinPath(rootPrefix, `labels/segmentation/${imgItem.baseName}.txt`)
+      ]);
+
+      const rawBoxes = parseDetectionLabels(detectionContent, dims.width, dims.height);
+      const rawMasks = parseSegmentationLabels(segmentationContent, dims.width, dims.height);
+
+      highestClassIndex = Math.max(
+        highestClassIndex,
+        ...rawBoxes.map((item) => item.classIndex),
+        ...rawMasks.map((item) => item.classIndex)
+      );
+
+      parsedItems.push({
+        imgItem,
+        dims,
+        rawBoxes,
+        rawMasks
+      });
+    }
+
+    while (classNames.length <= highestClassIndex) {
+      classNames.push(`clase_${classNames.length}`);
+    }
+    if (!classNames.length) {
+      classNames = ["objeto"];
+    }
+
+    const nextClasses = classNames.map((name, index) => ({
+      id: createId("class"),
+      name,
+      color: getColorForIndex(index)
+    }));
+    const classIdByIndex = nextClasses.reduce((acc, item, index) => {
+      acc[index] = item.id;
+      return acc;
+    }, {});
+
+    revokeImageUrls(images);
+
+    const nextImages = [];
+    const nextAnnotationsByImage = {};
+
+    for (const parsed of parsedItems) {
+      const imageId = createId("img");
+      const outputFileName = parsed.imgItem.fileName;
+      const sourceName = summaryByOutputImage.get(outputFileName) ?? outputFileName;
+      const persistentUrl = URL.createObjectURL(parsed.imgItem.file);
+
+      nextImages.push({
+        id: imageId,
+        file: parsed.imgItem.file,
+        url: persistentUrl,
+        width: parsed.dims.width,
+        height: parsed.dims.height,
+        name: sourceName,
+        outputName: outputFileName,
+        split: parsed.imgItem.split
+      });
+
+      nextAnnotationsByImage[imageId] = {
+        boxes: parsed.rawBoxes
+          .map((item) => ({
+            id: createId("box"),
+            classId: classIdByIndex[item.classIndex] ?? nextClasses[0].id,
+            x: item.x,
+            y: item.y,
+            width: item.width,
+            height: item.height
+          }))
+          .filter((item) => item.width >= 1 && item.height >= 1),
+        masks: parsed.rawMasks
+          .map((item) => ({
+            id: createId("mask"),
+            classId: classIdByIndex[item.classIndex] ?? nextClasses[0].id,
+            points: item.points
+          }))
+          .filter((item) => item.points.length >= 3)
+      };
+    }
+
+    const importedProjectName =
+      annotationsMeta?.projectName ||
+      extractRootFolderName(rootPrefix) ||
+      projectName ||
+      "dataset-yolo";
+
+    const importedConfig = configFile ? safeParseJson(await configFile.text()) : null;
+
+    const firstImageId = nextImages[0]?.id ?? null;
+    let nextSelectedImageId = firstImageId;
+
+    if (importedConfig?.currentImageName) {
+      const byName = nextImages.find(
+        (img) => img.name === importedConfig.currentImageName || img.outputName === importedConfig.currentImageName
+      );
+      if (byName) {
+        nextSelectedImageId = byName.id;
+      }
+    } else if (importedConfig?.currentImageIndex) {
+      const idx = Math.max(0, Number(importedConfig.currentImageIndex) - 1);
+      nextSelectedImageId = nextImages[idx]?.id ?? firstImageId;
+    }
+
+    setProjectName(importedProjectName);
+    setClasses(nextClasses);
+    setSelectedClassId(nextClasses[0]?.id ?? null);
+    setImages(nextImages);
+    setSelectedImageId(nextSelectedImageId);
+    setAnnotationsByImage(nextAnnotationsByImage);
+
+    return {
+      images: nextImages.length,
+      classes: nextClasses.length,
+      masks: Object.values(nextAnnotationsByImage).reduce((acc, item) => acc + item.masks.length, 0)
+    };
   }
 
   function removeImage(imageId) {
@@ -236,6 +423,7 @@ export function useDataset() {
     selectedImageId,
     setSelectedImageId,
     addImages,
+    importDataset,
     removeImage,
     annotationsByImage,
     selectedAnnotations,
@@ -283,4 +471,230 @@ function hasImageAnnotations(annotation) {
 
 function getFileKey(file) {
   return `${file.name}__${file.size}__${file.lastModified}`;
+}
+
+function isImageFile(file) {
+  if (!file) {
+    return false;
+  }
+
+  if (file.type && file.type.startsWith("image/")) {
+    return true;
+  }
+
+  const name = (file.name || "").toLowerCase();
+  return /\.(png|jpe?g|webp|bmp|gif|tiff?|heic|heif)$/i.test(name);
+}
+
+function normalizePath(path) {
+  return path.replaceAll("\\", "/").replace(/^\.\//, "");
+}
+
+function detectDatasetRoot(paths) {
+  const matches = paths
+    .map((path) => {
+      const hit = path.match(/^(.*?)(?:images\/(?:train|val)\/|images\/)/i);
+      return hit ? hit[1] : null;
+    })
+    .filter(Boolean);
+
+  if (!matches.length) {
+    return "";
+  }
+
+  return matches.sort((a, b) => a.length - b.length)[0];
+}
+
+function joinPath(prefix, relativePath) {
+  if (!prefix) {
+    return normalizePath(relativePath);
+  }
+  return normalizePath(`${prefix}${relativePath}`);
+}
+
+function findFileBySuffix(indexedFiles, suffix) {
+  const normalizedSuffix = normalizePath(suffix).toLowerCase();
+  const hit = indexedFiles.find((item) => item.path.toLowerCase().endsWith(normalizedSuffix));
+  return hit?.file ?? null;
+}
+
+function parseDatasetImageEntry(item) {
+  if (!isImageFile(item.file)) {
+    return null;
+  }
+
+  const splitMatch = item.path.match(/(^|\/)images\/(train|val)\/([^/]+)$/i);
+  if (splitMatch) {
+    const split = splitMatch[2].toLowerCase();
+    const fileName = splitMatch[3];
+    const baseName = removeExtension(fileName);
+    return {
+      file: item.file,
+      split,
+      fileName,
+      baseName,
+      path: item.path
+    };
+  }
+
+  const noSplitMatch = item.path.match(/(^|\/)images\/([^/]+)$/i);
+  if (noSplitMatch) {
+    const fileName = noSplitMatch[2];
+    const baseName = removeExtension(fileName);
+    return {
+      file: item.file,
+      split: "train",
+      fileName,
+      baseName,
+      path: item.path
+    };
+  }
+
+  return null;
+}
+
+async function getFirstExistingText(entriesByPath, candidates) {
+  for (const path of candidates) {
+    const file = entriesByPath.get(path);
+    if (file) {
+      return file.text();
+    }
+  }
+  return "";
+}
+
+function parseDetectionLabels(content, imageWidth, imageHeight) {
+  if (!content.trim()) {
+    return [];
+  }
+
+  return content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split(/\s+/).map((item) => Number(item));
+      if (parts.length < 5 || parts.some((value) => Number.isNaN(value))) {
+        return null;
+      }
+
+      const classIndex = Math.max(0, Math.floor(parts[0]));
+      const cx = parts[1] * imageWidth;
+      const cy = parts[2] * imageHeight;
+      const width = parts[3] * imageWidth;
+      const height = parts[4] * imageHeight;
+
+      return {
+        classIndex,
+        x: clamp(cx - width / 2, 0, imageWidth),
+        y: clamp(cy - height / 2, 0, imageHeight),
+        width: clamp(width, 0, imageWidth),
+        height: clamp(height, 0, imageHeight)
+      };
+    })
+    .filter(Boolean);
+}
+
+function parseSegmentationLabels(content, imageWidth, imageHeight) {
+  if (!content.trim()) {
+    return [];
+  }
+
+  return content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split(/\s+/).map((item) => Number(item));
+      if (parts.length < 7 || parts.some((value) => Number.isNaN(value))) {
+        return null;
+      }
+
+      const classIndex = Math.max(0, Math.floor(parts[0]));
+      const coords = parts.slice(1);
+      const points = [];
+      for (let i = 0; i < coords.length - 1; i += 2) {
+        points.push({
+          x: clamp(coords[i] * imageWidth, 0, imageWidth),
+          y: clamp(coords[i + 1] * imageHeight, 0, imageHeight)
+        });
+      }
+
+      return points.length >= 3
+        ? {
+            classIndex,
+            points
+          }
+        : null;
+    })
+    .filter(Boolean);
+}
+
+function parseClassNamesFromYaml(content) {
+  const lines = content.split(/\r?\n/).map((line) => line.trim());
+  const namesLineIndex = lines.findIndex((line) => line.startsWith("names:"));
+  if (namesLineIndex < 0) {
+    return [];
+  }
+
+  const inlineRaw = lines[namesLineIndex].slice("names:".length).trim();
+  if (inlineRaw.startsWith("[") && inlineRaw.endsWith("]")) {
+    return inlineRaw
+      .slice(1, -1)
+      .split(",")
+      .map((item) => item.trim().replace(/^['\"]|['\"]$/g, ""))
+      .filter(Boolean);
+  }
+
+  const numericMap = [];
+  for (let i = namesLineIndex + 1; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!line || /^[a-zA-Z_][\w-]*:/.test(line)) {
+      break;
+    }
+    const match = line.match(/^(\d+)\s*:\s*(.+)$/);
+    if (!match) {
+      continue;
+    }
+    const index = Number(match[1]);
+    const label = match[2].trim().replace(/^['\"]|['\"]$/g, "");
+    numericMap[index] = label;
+  }
+
+  return numericMap.filter(Boolean);
+}
+
+function removeExtension(fileName) {
+  const dotIndex = fileName.lastIndexOf(".");
+  return dotIndex >= 0 ? fileName.slice(0, dotIndex) : fileName;
+}
+
+function safeParseJson(content) {
+  try {
+    return JSON.parse(content);
+  } catch {
+    return null;
+  }
+}
+
+function extractRootFolderName(rootPrefix) {
+  if (!rootPrefix) {
+    return "";
+  }
+
+  const clean = rootPrefix.replace(/\/$/, "");
+  const parts = clean.split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? "";
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function revokeImageUrls(imageList) {
+  imageList.forEach((img) => {
+    if (img.url) {
+      URL.revokeObjectURL(img.url);
+    }
+  });
 }
