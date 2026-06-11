@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 export default function Sidebar({
+  nasBasePath,
   classes,
   selectedClassId,
   setSelectedClassId,
@@ -15,6 +16,7 @@ export default function Sidebar({
   deleteAnnotation
 }) {
   const [newClassName, setNewClassName] = useState("");
+  const [selectedFolder, setSelectedFolder] = useState("");
 
   const classById = useMemo(() => {
     return classes.reduce((acc, item) => {
@@ -22,6 +24,28 @@ export default function Sidebar({
       return acc;
     }, {});
   }, [classes]);
+
+  const folderNodes = useMemo(() => {
+    const folders = new Map();
+    images.forEach((img) => {
+      const normalized = String(img.relativePath || img.name || "").replaceAll("\\", "/");
+      const folder = normalized.includes("/") ? normalized.split("/").slice(0, -1).join("/") : "(raiz)";
+      folders.set(folder, (folders.get(folder) || 0) + 1);
+    });
+    return Array.from(folders.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [images]);
+
+  const filteredImages = useMemo(() => {
+    if (!selectedFolder) {
+      return images;
+    }
+
+    return images.filter((img) => {
+      const normalized = String(img.relativePath || img.name || "").replaceAll("\\", "/");
+      const folder = normalized.includes("/") ? normalized.split("/").slice(0, -1).join("/") : "(raiz)";
+      return folder === selectedFolder;
+    });
+  }, [images, selectedFolder]);
 
   function handleAddClass(event) {
     event.preventDefault();
@@ -62,19 +86,40 @@ export default function Sidebar({
       </section>
 
       <section className="panel">
+        <h2>Estructura NAS</h2>
+        <p className="muted">{nasBasePath || "Escribe arriba la ruta base de la NAS."}</p>
+        <div className="list list-folders">
+          <div className={!selectedFolder ? "list-item active" : "list-item"}>
+            <button type="button" className="class-btn" onClick={() => setSelectedFolder("")}>
+              <span>Todas las carpetas</span>
+            </button>
+          </div>
+          {folderNodes.map(([folder, count]) => (
+            <div key={folder} className={selectedFolder === folder ? "list-item active" : "list-item"}>
+              <button type="button" className="class-btn" onClick={() => setSelectedFolder(folder)}>
+                <span>{folder}</span>
+                <span className="muted-inline">{count}</span>
+              </button>
+            </div>
+          ))}
+          {!folderNodes.length && <p className="muted">Carga una carpeta para ver su estructura.</p>}
+        </div>
+      </section>
+
+      <section className="panel">
         <h2>Imagenes</h2>
         <div className="list list-images">
-          {images.map((img) => (
+          {filteredImages.map((img) => (
             <div key={img.id} className={selectedImageId === img.id ? "list-item active" : "list-item"}>
               <button type="button" className="class-btn" onClick={() => setSelectedImageId(img.id)}>
-                <span>{img.name}</span>
+                <span>{img.relativePath || img.name}</span>
               </button>
               <button className="btn btn-sm" type="button" onClick={() => removeImage(img.id)}>
                 x
               </button>
             </div>
           ))}
-          {!images.length && <p className="muted">No hay imagenes cargadas.</p>}
+          {!filteredImages.length && <p className="muted">No hay imagenes en esa carpeta.</p>}
         </div>
       </section>
 

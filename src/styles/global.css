@@ -68,6 +68,10 @@ input {
   background: #fff;
 }
 
+.input-wide {
+  min-width: 320px;
+}
+
 .btn {
   border: 1px solid var(--line);
   background: #fff;
@@ -153,6 +157,12 @@ input {
   padding-right: 0.2rem;
 }
 
+.list-folders {
+  max-height: 14rem;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
+
 .list-item {
   display: flex;
   align-items: center;
@@ -191,6 +201,12 @@ input {
   font-size: 0.86rem;
   color: var(--muted);
   margin: 0.3rem 0;
+}
+
+.muted-inline {
+  margin-left: auto;
+  font-size: 0.78rem;
+  color: var(--muted);
 }
 
 .canvas-main {

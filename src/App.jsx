@@ -9,6 +9,7 @@ export default function App() {
   const dataset = useDataset();
   const [tool, setTool] = useState("box");
   const [implementationId, setImplementationId] = useState("local");
+  const [exportMode, setExportMode] = useState("normal");
   const [isExporting, setIsExporting] = useState(false);
   const [status, setStatus] = useState("");
   const implementation = getImplementationById(implementationId);
@@ -44,7 +45,7 @@ export default function App() {
     try {
       setIsExporting(true);
       setStatus("");
-      const result = await implementation.exportDataset(dataset);
+      const result = await implementation.exportDataset(dataset, { exportMode });
       setStatus(result?.message || "Operacion completada.");
     } catch (error) {
       setStatus(error?.message || "No se pudo exportar el dataset.");
@@ -57,7 +58,9 @@ export default function App() {
     try {
       const result = await implementation.importDataset(dataset, fileList);
       setStatus(
-        `Dataset importado: ${result.images} imagenes, ${result.classes} clases, ${result.masks} mascaras recuperadas.`
+        result?.needsBaseFolder
+          ? `Dataset NAS importado. Ahora carga la carpeta base ${result.baseFolderName ? `(${result.baseFolderName})` : ""} para volver a vincular las imagenes.`
+          : `Dataset importado: ${result.images} imagenes, ${result.classes} clases, ${result.masks} mascaras recuperadas.`
       );
     } catch (error) {
       setStatus(error?.message || "No se pudo importar el dataset.");
@@ -69,8 +72,12 @@ export default function App() {
       <Toolbar
         projectName={dataset.projectName}
         setProjectName={dataset.setProjectName}
+        nasBasePath={dataset.nasBasePath}
+        setNasBasePath={dataset.setNasBasePath}
         tool={tool}
         setTool={setTool}
+        exportMode={exportMode}
+        setExportMode={setExportMode}
         implementationId={implementationId}
         implementationOptions={IMPLEMENTATIONS}
         onChangeImplementation={(nextId) => {
@@ -79,14 +86,28 @@ export default function App() {
           setStatus(`Implementacion activa: ${next.label}. ${next.description}`);
         }}
         onUploadImages={(fileList) =>
-          implementation.uploadImages(dataset, fileList).catch((error) => {
-            setStatus(error?.message || "No se pudieron cargar imagenes.");
-          })
+          implementation
+            .uploadImages(dataset, fileList)
+            .then((result) => {
+              if (result?.message) {
+                setStatus(result.message);
+              }
+            })
+            .catch((error) => {
+              setStatus(error?.message || "No se pudieron cargar imagenes.");
+            })
         }
         onUploadFolder={(fileList) =>
-          implementation.uploadFolder(dataset, fileList).catch((error) => {
-            setStatus(error?.message || "No se pudo cargar la carpeta.");
-          })
+          implementation
+            .uploadFolder(dataset, fileList)
+            .then((result) => {
+              if (result?.message) {
+                setStatus(result.message);
+              }
+            })
+            .catch((error) => {
+              setStatus(error?.message || "No se pudo cargar la carpeta.");
+            })
         }
         onImportDataset={handleImportDataset}
         onExport={handleExport}
@@ -96,6 +117,7 @@ export default function App() {
 
       <div className="workspace">
         <Sidebar
+          nasBasePath={dataset.nasBasePath}
           classes={dataset.classes}
           selectedClassId={dataset.selectedClassId}
           setSelectedClassId={dataset.setSelectedClassId}

@@ -10,7 +10,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "desktop:dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && electron .\"",
+    "desktop:dev": "concurrently -k \"vite --port 5180 --strictPort\" \"wait-on tcp:5180 && electron .\"",
     "desktop:pack": "npm run build && electron-builder --dir -c.directories.output=release/pack",
     "desktop:build": "npm run build && electron-builder -c.directories.output=release/all",
     "desktop:build:mac": "npm run build && electron-builder --mac -c.directories.output=release/mac",

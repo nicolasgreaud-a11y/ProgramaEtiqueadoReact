@@ -16,6 +16,14 @@ Al exportar se genera:
 - `annotations.json` (resumen del proyecto)
 - `.config` (progreso: imagen actual y porcentaje analizado)
 
+En la barra superior hay dos modos de exportacion:
+- `Normal`: exporta imagenes + labels + metadatos, como hasta ahora.
+- `NAS`:
+  - no mete imagenes reales dentro del `.zip`
+  - guarda labels y referencias a la ruta original de cada imagen en la NAS
+  - al importar ese ZIP en otro ordenador desde la app de escritorio, intentara abrir esas imagenes directamente desde la NAS del propio equipo
+  - `datos/imagenes.json` solo guarda `path` e `imageName`
+
 ## Instalacion
 
 ```bash
