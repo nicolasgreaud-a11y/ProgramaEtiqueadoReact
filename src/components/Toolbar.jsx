@@ -2,6 +2,8 @@ import { useRef } from "react";
 import eonSeaLogo from "../assets/eon-sea-logo-negro.png";
 
 export default function Toolbar({
+  theme,
+  setTheme,
   projectName,
   setProjectName,
   selectedDirectoryPath,
@@ -67,6 +69,20 @@ export default function Toolbar({
           <p className="toolbar-eyebrow">EONSEA</p>
           <h1 className="toolbar-title">Programa de Etiquetado</h1>
         </div>
+      </div>
+
+      <div className="toolbar-group theme-group">
+        <span className="field-label">Tema</span>
+        <button
+          className="theme-switch"
+          type="button"
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          aria-label={`Cambiar a tema ${theme === "dark" ? "claro" : "oscuro"}`}
+          aria-pressed={theme === "light"}
+        >
+          <span className={theme === "dark" ? "theme-option active" : "theme-option"}>Oscuro</span>
+          <span className={theme === "light" ? "theme-option active" : "theme-option"}>Claro</span>
+        </button>
       </div>
 
       <div className="toolbar-group">

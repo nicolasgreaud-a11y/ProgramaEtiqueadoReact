@@ -12,6 +12,7 @@ export default function App() {
   const [exportMode, setExportMode] = useState("normal");
   const [isExporting, setIsExporting] = useState(false);
   const [status, setStatus] = useState("");
+  const [theme, setTheme] = useState(() => window.localStorage.getItem("theme") || "dark");
   const implementation = getImplementationById(implementationId);
 
   useEffect(() => {
@@ -40,6 +41,11 @@ export default function App() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [dataset.images, dataset.selectedImageId, dataset.setSelectedImageId]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    window.localStorage.setItem("theme", theme);
+  }, [theme]);
 
   async function handleExport() {
     try {
@@ -70,6 +76,8 @@ export default function App() {
   return (
     <div className="app-shell">
       <Toolbar
+        theme={theme}
+        setTheme={setTheme}
         projectName={dataset.projectName}
         setProjectName={dataset.setProjectName}
         selectedDirectoryPath={dataset.selectedDirectoryPath}
