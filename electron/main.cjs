@@ -57,22 +57,55 @@ app.whenReady().then(() => {
     return result.canceled ? [] : result.filePaths;
   });
 
-  ipcMain.handle('pick-image-folder-files', async () => {
+  ipcMain.handle('pick-image-directory', async () => {
     const result = await dialog.showOpenDialog({
-      properties: ['openDirectory', 'multiSelections']
+      properties: ['openDirectory']
     });
 
-    if (result.canceled) {
-      return [];
+    if (result.canceled || !result.filePaths.length) {
+      return null;
     }
 
-    const allFiles = [];
-    for (const folderPath of result.filePaths) {
-      const folderFiles = await collectImageFiles(folderPath);
-      allFiles.push(...folderFiles);
+    const directoryPath = result.filePaths[0];
+    return {
+      directoryPath,
+      selectedFolderPath: directoryPath,
+      files: await collectImageFiles(directoryPath)
+    };
+  });
+
+  ipcMain.handle('pick-image-folder-from-base', async (_event, baseDirectoryPath) => {
+    const normalizedBasePath = normalizeDirectoryPath(baseDirectoryPath);
+    if (!normalizedBasePath) {
+      return null;
     }
 
-    return allFiles;
+    const result = await dialog.showOpenDialog({
+      defaultPath: normalizedBasePath,
+      properties: ['openDirectory']
+    });
+
+    if (result.canceled || !result.filePaths.length) {
+      return null;
+    }
+
+    const selectedFolderPath = result.filePaths[0];
+    const normalizedSelectedPath = normalizeDirectoryPath(selectedFolderPath);
+    const relativeFolderPath = path.relative(normalizedBasePath, normalizedSelectedPath);
+
+    if (
+      !relativeFolderPath ||
+      relativeFolderPath.startsWith('..') ||
+      path.isAbsolute(relativeFolderPath)
+    ) {
+      throw new Error("La carpeta seleccionada debe estar dentro del directorio base cargado.");
+    }
+
+    return {
+      directoryPath: normalizedBasePath,
+      selectedFolderPath: normalizedSelectedPath,
+      files: await collectImageFiles(normalizedSelectedPath, normalizedBasePath)
+    };
   });
 
   ipcMain.handle('pick-dataset-folder', async () => {
@@ -189,7 +222,12 @@ async function findFileByName(rootDir, targetName, maxDepth) {
   return null;
 }
 
-async function collectImageFiles(rootDir) {
+function normalizeDirectoryPath(directoryPath) {
+  const normalized = String(directoryPath || "").trim();
+  return normalized ? path.normalize(normalized) : "";
+}
+
+async function collectImageFiles(rootDir, relativeRootDir = rootDir) {
   const results = [];
   const stack = [rootDir];
 
@@ -211,12 +249,16 @@ async function collectImageFiles(rootDir) {
       }
 
       if (entry.isFile() && /\.(png|jpe?g|webp|bmp|gif|tiff?|heic|heif)$/i.test(entry.name)) {
-        results.push(entryPath);
+        results.push({
+          name: entry.name,
+          path: entryPath,
+          relativePath: path.relative(relativeRootDir, entryPath).replaceAll('\\', '/')
+        });
       }
     }
   }
 
-  return results.sort((a, b) => a.localeCompare(b));
+  return results.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
 }
 
 async function collectAllFiles(rootDir, currentDir = rootDir) {

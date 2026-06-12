@@ -6,8 +6,11 @@ contextBridge.exposeInMainWorld('desktopApp', {
   pickImageFiles() {
     return ipcRenderer.invoke('pick-image-files');
   },
-  pickImageFolderFiles() {
-    return ipcRenderer.invoke('pick-image-folder-files');
+  pickImageDirectory() {
+    return ipcRenderer.invoke('pick-image-directory');
+  },
+  pickImageFolderFromBase(baseDirectoryPath) {
+    return ipcRenderer.invoke('pick-image-folder-from-base', baseDirectoryPath);
   },
   pickDatasetFolder() {
     return ipcRenderer.invoke('pick-dataset-folder');

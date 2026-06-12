@@ -1,8 +1,10 @@
 import { useRef } from "react";
+import eonSeaLogo from "../assets/eon-sea-logo-negro.png";
 
 export default function Toolbar({
   projectName,
   setProjectName,
+  selectedDirectoryPath,
   nasBasePath,
   setNasBasePath,
   tool,
@@ -13,6 +15,7 @@ export default function Toolbar({
   implementationOptions,
   onChangeImplementation,
   onUploadImages,
+  onUploadSubfolder,
   onUploadFolder,
   onImportDataset,
   onExport,
@@ -35,10 +38,17 @@ export default function Toolbar({
     }
   }
 
-  async function handleDesktopFolderPick() {
-    const paths = await window.desktopApp?.pickImageFolderFiles?.();
-    if (paths?.length) {
-      onUploadFolder(paths);
+  async function handleDesktopDirectoryPick() {
+    const selection = await window.desktopApp?.pickImageDirectory?.();
+    if (selection?.files?.length) {
+      onUploadFolder(selection);
+    }
+  }
+
+  async function handleDesktopSubfolderPick() {
+    const selection = await window.desktopApp?.pickImageFolderFromBase?.(selectedDirectoryPath);
+    if (selection?.files?.length) {
+      onUploadSubfolder(selection);
     }
   }
 
@@ -51,6 +61,14 @@ export default function Toolbar({
 
   return (
     <header className="toolbar">
+      <div className="toolbar-brand">
+        <img className="toolbar-logo" src={eonSeaLogo} alt="Eon Sea" />
+        <div>
+          <p className="toolbar-eyebrow">EONSEA</p>
+          <h1 className="toolbar-title">Programa de Etiquetado</h1>
+        </div>
+      </div>
+
       <div className="toolbar-group">
         <label className="field-label" htmlFor="project-name">
           Proyecto
@@ -61,6 +79,19 @@ export default function Toolbar({
           value={projectName}
           onChange={(event) => setProjectName(event.target.value)}
           placeholder="dataset-yolo"
+        />
+      </div>
+
+      <div className="toolbar-group">
+        <label className="field-label" htmlFor="selected-directory-path">
+          Directorio cargado
+        </label>
+        <input
+          id="selected-directory-path"
+          className="input input-wide"
+          value={selectedDirectoryPath}
+          placeholder="Aun no se ha seleccionado ningun directorio"
+          readOnly
         />
       </div>
 
@@ -182,8 +213,18 @@ export default function Toolbar({
           className="btn"
           type="button"
           onClick={() =>
-            window.desktopApp?.isDesktop ? handleDesktopFolderPick() : folderInputRef.current?.click()
+            window.desktopApp?.isDesktop ? handleDesktopDirectoryPick() : folderInputRef.current?.click()
           }
+        >
+          Cargar directorio
+        </button>
+        <button
+          className="btn"
+          type="button"
+          onClick={() =>
+            window.desktopApp?.isDesktop ? handleDesktopSubfolderPick() : folderInputRef.current?.click()
+          }
+          disabled={!selectedDirectoryPath}
         >
           Cargar carpeta
         </button>

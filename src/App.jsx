@@ -72,6 +72,7 @@ export default function App() {
       <Toolbar
         projectName={dataset.projectName}
         setProjectName={dataset.setProjectName}
+        selectedDirectoryPath={dataset.selectedDirectoryPath}
         nasBasePath={dataset.nasBasePath}
         setNasBasePath={dataset.setNasBasePath}
         tool={tool}
@@ -95,6 +96,18 @@ export default function App() {
             })
             .catch((error) => {
               setStatus(error?.message || "No se pudieron cargar imagenes.");
+            })
+        }
+        onUploadSubfolder={(fileList) =>
+          implementation
+            .uploadSubfolder(dataset, fileList)
+            .then((result) => {
+              if (result?.message) {
+                setStatus(result.message);
+              }
+            })
+            .catch((error) => {
+              setStatus(error?.message || "No se pudo cargar la carpeta seleccionada.");
             })
         }
         onUploadFolder={(fileList) =>

@@ -109,6 +109,7 @@ export async function exportDatasetZip({
     if (isNasExport) {
       imageRefs.push({
         path: sourcePath,
+        relativePath: item.image.relativePath || "",
         imageName: sourceImageName
       });
     }
@@ -207,11 +208,10 @@ function isAbsoluteFilePath(filePath) {
 }
 
 function buildNasReferencePath(image, nasBasePath) {
-  const cleanBase = String(nasBasePath || "").trim().replaceAll("\\", "/").replace(/\/+$/, "");
   const cleanRelative = String(image?.relativePath || "").trim().replaceAll("\\", "/").replace(/^\/+/, "");
 
-  if (cleanBase && cleanRelative) {
-    return `${cleanBase}/${cleanRelative}`;
+  if (cleanRelative) {
+    return cleanRelative;
   }
 
   return image?.relativePath || image?.sourcePath || image?.name || "";

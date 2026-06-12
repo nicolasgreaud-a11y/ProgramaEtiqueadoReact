@@ -8,6 +8,9 @@ export const apiImplementation = {
   async uploadFolder() {
     throw new Error("Implementacion API aun no disponible. Cambia a Local.");
   },
+  async uploadSubfolder() {
+    throw new Error("Implementacion API aun no disponible. Cambia a Local.");
+  },
   async importDataset() {
     throw new Error("Implementacion API aun no disponible. Cambia a Local.");
   },

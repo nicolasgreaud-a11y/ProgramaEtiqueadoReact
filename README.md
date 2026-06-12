@@ -20,9 +20,9 @@ En la barra superior hay dos modos de exportacion:
 - `Normal`: exporta imagenes + labels + metadatos, como hasta ahora.
 - `NAS`:
   - no mete imagenes reales dentro del `.zip`
-  - guarda labels y referencias a la ruta original de cada imagen en la NAS
-  - al importar ese ZIP en otro ordenador desde la app de escritorio, intentara abrir esas imagenes directamente desde la NAS del propio equipo
-  - `datos/imagenes.json` solo guarda `path` e `imageName`
+  - si las imagenes se cargaron con `Cargar directorio`, guarda labels y referencias relativas al directorio raiz en vez de rutas absolutas tipo `/Users/nico/...`
+  - al importar ese ZIP en otro ordenador, solo hace falta volver a seleccionar el directorio base equivalente en la otra maquina
+  - `datos/imagenes.json` guarda `relativePath`, `path` e `imageName`
 
 ## Instalacion
 
@@ -88,13 +88,14 @@ Sin certificado de firma, los avisos de antivirus no se pueden evitar de forma c
 
 ## Uso rapido
 
-1. Carga imagenes o carpetas completas.
-2. Crea tus clases (ej: grieta, buque, corrosion).
-3. Selecciona una clase y herramienta:
+1. Carga imagenes sueltas o usa `Cargar directorio` para fijar una raiz compartible.
+2. Si solo quieres trabajar con una parte de esa raiz, usa `Cargar carpeta` y elige una subcarpeta dentro del directorio base.
+3. Crea tus clases (ej: grieta, buque, corrosion).
+4. Selecciona una clase y herramienta:
    - `Caja`: click y arrastre.
    - `Mascara`: clics para puntos, luego `Cerrar mascara` o tecla `Enter`.
-4. Exporta con `Exportar ZIP`.
-5. Para continuar en otro equipo: descomprime el ZIP y usa `Importar dataset` seleccionando la carpeta exportada.
+5. Exporta con `Exportar ZIP`.
+6. Para continuar en otro equipo: descomprime el ZIP y usa `Importar dataset` seleccionando la carpeta exportada.
 
 ## Estructura del proyecto
 

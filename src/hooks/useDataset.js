@@ -15,6 +15,7 @@ export function useDataset() {
   const [annotationsByImage, setAnnotationsByImage] = useState({});
   const [nasBasePath, setNasBasePath] = useState("");
   const [nasBaseFolderName, setNasBaseFolderName] = useState("");
+  const [selectedDirectoryPath, setSelectedDirectoryPath] = useState("");
   const [pendingNasImport, setPendingNasImport] = useState(null);
 
   const selectedImage = useMemo(
@@ -95,6 +96,7 @@ export function useDataset() {
 
   async function addImages(fileList) {
     setPendingNasImport(null);
+    setSelectedDirectoryPath("");
     const files = Array.from(fileList ?? [])
       .filter((file) => isImageFile(file))
       .sort((a, b) => {
@@ -156,6 +158,7 @@ export function useDataset() {
 
   async function addImagePaths(filePaths) {
     setPendingNasImport(null);
+    setSelectedDirectoryPath("");
     const paths = Array.from(filePaths ?? [])
       .map((item) => normalizeCandidatePath(item))
       .filter(Boolean)
@@ -193,6 +196,66 @@ export function useDataset() {
       })
     );
 
+    setImages((prev) => {
+      const updated = [...prev, ...nextImages];
+      if (!selectedImageId && updated[0]) {
+        setSelectedImageId(updated[0].id);
+      }
+      return updated;
+    });
+
+    setAnnotationsByImage((prev) => {
+      const next = { ...prev };
+      nextImages.forEach((img) => {
+        next[img.id] = { boxes: [], masks: [] };
+      });
+      return next;
+    });
+  }
+
+  async function addImageDirectory(directorySelection) {
+    setPendingNasImport(null);
+    const directoryPath = normalizeCandidatePath(directorySelection?.directoryPath);
+    const fileEntries = Array.from(directorySelection?.files ?? [])
+      .filter((entry) => isImagePathOrEntry(entry))
+      .sort((a, b) => String(a.relativePath || "").localeCompare(String(b.relativePath || "")));
+
+    if (!directoryPath || !fileEntries.length) {
+      return;
+    }
+
+    const existingPaths = new Set(images.map((img) => img.sourcePath).filter(Boolean));
+    const uniqueEntries = fileEntries.filter((entry) => !existingPaths.has(normalizeCandidatePath(entry.path)));
+    if (!uniqueEntries.length) {
+      setSelectedDirectoryPath(directoryPath);
+      return;
+    }
+
+    const baseFolderName = extractFileNameFromPath(directoryPath);
+    const nextImages = await Promise.all(
+      uniqueEntries.map(async (entry) => {
+        const sourcePath = normalizeCandidatePath(entry.path);
+        const relativePath = normalizePath(entry.relativePath || entry.name || extractFileNameFromPath(sourcePath));
+        const file = await createFileFromDesktopEntry(sourcePath, entry.name || extractFileNameFromPath(sourcePath));
+        const url = URL.createObjectURL(file);
+        const dims = await readImageDimensions(url);
+
+        return {
+          id: createId("img"),
+          file,
+          url,
+          width: dims.width,
+          height: dims.height,
+          name: relativePath,
+          sourcePath,
+          relativePath,
+          baseFolderName
+        };
+      })
+    );
+
+    setSelectedDirectoryPath(directoryPath);
+    setNasBaseFolderName(baseFolderName);
     setImages((prev) => {
       const updated = [...prev, ...nextImages];
       if (!selectedImageId && updated[0]) {
@@ -269,7 +332,12 @@ export function useDataset() {
       );
     }
 
-    if (!datasetImages.length && nasReferencedImages.length && !window.desktopApp?.readFileFromPath) {
+    const canAutoOpenNasReferences =
+      Boolean(window.desktopApp?.readFileFromPath) &&
+      nasReferencedImages.length > 0 &&
+      nasReferencedImages.every((item) => isAbsoluteFilePath(item.sourcePath));
+
+    if (!datasetImages.length && nasReferencedImages.length && !canAutoOpenNasReferences) {
       const importedProjectName =
         annotationsMeta?.projectName ||
         extractRootFolderName(rootPrefix) ||
@@ -278,9 +346,12 @@ export function useDataset() {
 
       const nextClasses = buildImportedClasses(classNames);
       const pendingItems = [];
+      const baseFolderName = nasImagesMeta?.baseFolderName || "";
 
       for (const ref of nasReferencedImages) {
-        const labelBaseName = buildNasLabelStem(ref.path);
+        const storedReferencePath = ref.relativePath || ref.sourcePath;
+        const relativePath = buildPortableRelativePath(ref, baseFolderName);
+        const labelBaseName = buildNasLabelStem(storedReferencePath);
         const split = detectNasSplit(entriesByPath, rootPrefix, labelBaseName);
         const detectionContent = await getFirstExistingText(entriesByPath, [
           joinPath(rootPrefix, `labels/detection/${split}/${labelBaseName}.txt`),
@@ -294,8 +365,8 @@ export function useDataset() {
         ]);
 
         pendingItems.push({
-          relativePath: normalizePath(ref.path),
-          imageName: ref.imageName || extractFileNameFromPath(ref.path),
+          relativePath: normalizePath(relativePath),
+          imageName: ref.sourceImageName || extractFileNameFromPath(storedReferencePath),
           split,
           detectionContent,
           segmentationContent
@@ -310,6 +381,7 @@ export function useDataset() {
       setSelectedImageId(null);
       setAnnotationsByImage({});
       setNasBaseFolderName(nasImagesMeta?.baseFolderName || "");
+      setSelectedDirectoryPath("");
       setPendingNasImport({
         projectName: importedProjectName,
         classes: nextClasses,
@@ -451,6 +523,7 @@ export function useDataset() {
     setImages(nextImages);
     setSelectedImageId(nextSelectedImageId);
     setAnnotationsByImage(nextAnnotationsByImage);
+    setSelectedDirectoryPath("");
     setPendingNasImport(null);
 
     return {
@@ -462,24 +535,50 @@ export function useDataset() {
 
   async function linkNasBaseFolder(fileList) {
     if (!pendingNasImport) {
-      return addImages(fileList);
-    }
-
-    const folderFiles = Array.from(fileList ?? []).filter((file) => isImageFile(file));
-    if (!folderFiles.length) {
-      throw new Error("Selecciona la carpeta base completa donde estan las imagenes de la NAS.");
+      return fileList?.files ? addImageDirectory(fileList) : addImages(fileList);
     }
 
     const fileByRelativePath = new Map();
     let baseFolderName = "";
+    let directoryPath = "";
 
-    for (const file of folderFiles) {
-      const relativeInfo = getRelativePathInfo(file);
-      if (!relativeInfo.relativePath) {
-        continue;
+    if (fileList?.files) {
+      directoryPath = normalizeCandidatePath(fileList.directoryPath);
+      baseFolderName = extractFileNameFromPath(directoryPath);
+
+      for (const entry of fileList.files) {
+        const relativePath = normalizePath(entry?.relativePath || entry?.name || "");
+        if (!relativePath || !isImagePathOrEntry(entry)) {
+          continue;
+        }
+
+        fileByRelativePath.set(relativePath, {
+          mode: "desktop",
+          sourcePath: normalizeCandidatePath(entry.path),
+          fileName: entry.name || extractFileNameFromPath(entry.path)
+        });
       }
-      baseFolderName = baseFolderName || relativeInfo.baseFolderName;
-      fileByRelativePath.set(normalizePath(relativeInfo.relativePath), file);
+    } else {
+      const folderFiles = Array.from(fileList ?? []).filter((file) => isImageFile(file));
+      if (!folderFiles.length) {
+        throw new Error("Selecciona la carpeta base completa donde estan las imagenes de la NAS.");
+      }
+
+      for (const file of folderFiles) {
+        const relativeInfo = getRelativePathInfo(file);
+        if (!relativeInfo.relativePath) {
+          continue;
+        }
+        baseFolderName = baseFolderName || relativeInfo.baseFolderName;
+        fileByRelativePath.set(normalizePath(relativeInfo.relativePath), {
+          mode: "browser",
+          file
+        });
+      }
+    }
+
+    if (!fileByRelativePath.size) {
+      throw new Error("Selecciona la carpeta base completa donde estan las imagenes de la NAS.");
     }
 
     const classIdByIndex = pendingNasImport.classes.reduce((acc, item, index) => {
@@ -492,12 +591,16 @@ export function useDataset() {
     let missing = 0;
 
     for (const item of pendingNasImport.items) {
-      const file = fileByRelativePath.get(item.relativePath);
-      if (!file) {
+      const matchedEntry = fileByRelativePath.get(item.relativePath);
+      if (!matchedEntry) {
         missing += 1;
         continue;
       }
 
+      const file =
+        matchedEntry.mode === "desktop"
+          ? await createFileFromDesktopEntry(matchedEntry.sourcePath, matchedEntry.fileName)
+          : matchedEntry.file;
       const url = URL.createObjectURL(file);
       const dims = await readImageDimensions(url);
       const imageId = createId("img");
@@ -511,7 +614,7 @@ export function useDataset() {
         width: dims.width,
         height: dims.height,
         name: item.relativePath,
-        sourcePath: "",
+        sourcePath: matchedEntry.mode === "desktop" ? matchedEntry.sourcePath : "",
         relativePath: item.relativePath,
         baseFolderName
       });
@@ -546,6 +649,7 @@ export function useDataset() {
     setSelectedImageId(nextImages[0]?.id ?? null);
     setAnnotationsByImage(nextAnnotationsByImage);
     setNasBaseFolderName(baseFolderName);
+    setSelectedDirectoryPath(directoryPath);
     setPendingNasImport(null);
 
     return {
@@ -656,6 +760,7 @@ export function useDataset() {
     selectedImageId,
     setSelectedImageId,
     addImages,
+    addImageDirectory,
     addImagePaths,
     linkNasBaseFolder,
     importDataset,
@@ -668,7 +773,8 @@ export function useDataset() {
     classIndexById,
     progress,
     hasPendingNasImport: Boolean(pendingNasImport),
-    nasBaseFolderName
+    nasBaseFolderName,
+    selectedDirectoryPath
   };
 }
 
@@ -758,7 +864,8 @@ function normalizeCandidatePath(value) {
 }
 
 function isAbsoluteFilePath(filePath) {
-  return /^\/.+/.test(filePath) || /^[a-zA-Z]:\/.+/.test(filePath);
+  const normalized = String(filePath || "").trim().replaceAll("\\", "/");
+  return /^\/.+/.test(normalized) || /^[a-zA-Z]:\/.+/.test(normalized);
 }
 
 function isImageFile(file) {
@@ -772,6 +879,18 @@ function isImageFile(file) {
 
   const name = (file.name || "").toLowerCase();
   return /\.(png|jpe?g|webp|bmp|gif|tiff?|heic|heif)$/i.test(name);
+}
+
+function isImagePathOrEntry(file) {
+  if (!file) {
+    return false;
+  }
+
+  if (isImageFile(file)) {
+    return true;
+  }
+
+  return /\.(png|jpe?g|webp|bmp|gif|tiff?|heic|heif)$/i.test(String(file.name || file.path || ""));
 }
 
 async function buildEmbeddedImportItems(datasetImages, entriesByPath, rootPrefix) {
@@ -836,12 +955,49 @@ async function buildNasImportItems(nasReferencedImages, entriesByPath, rootPrefi
 function normalizeNasReferencedImages(nasImagesMeta) {
   return Array.isArray(nasImagesMeta?.items)
     ? nasImagesMeta.items
-        .map((item) => ({
-          sourcePath: item?.sourcePath || item?.path || "",
-          sourceImageName: item?.sourceImageName || item?.imageName || ""
-        }))
-        .filter((item) => item.sourcePath)
+        .map((item) => {
+          const pathValue = item?.sourcePath || item?.path || "";
+          return {
+            sourcePath: pathValue,
+            sourceImageName: item?.sourceImageName || item?.imageName || "",
+            relativePath: item?.relativePath || item?.path || ""
+          };
+        })
+        .filter((item) => item.sourcePath || item.relativePath)
     : [];
+}
+
+async function createFileFromDesktopEntry(sourcePath, fileName) {
+  const bytes = await window.desktopApp.readFileFromPath(sourcePath);
+  return new File([bytes], fileName, { type: getMimeTypeFromName(fileName) });
+}
+
+function buildPortableRelativePath(ref, baseFolderName) {
+  const explicitRelativePath = normalizeCandidatePath(ref?.relativePath);
+  if (explicitRelativePath && !isAbsoluteFilePath(explicitRelativePath)) {
+    return explicitRelativePath;
+  }
+
+  const sourcePath = normalizeCandidatePath(ref?.sourcePath);
+  if (!sourcePath) {
+    return explicitRelativePath;
+  }
+
+  const cleanBaseFolderName = normalizeCandidatePath(baseFolderName).replace(/^\/+|\/+$/g, "");
+  if (!cleanBaseFolderName) {
+    return sourcePath;
+  }
+
+  const marker = `/${cleanBaseFolderName}/`;
+  const lowerSourcePath = sourcePath.toLowerCase();
+  const lowerMarker = marker.toLowerCase();
+  const markerIndex = lowerSourcePath.lastIndexOf(lowerMarker);
+
+  if (markerIndex >= 0) {
+    return sourcePath.slice(markerIndex + marker.length);
+  }
+
+  return sourcePath;
 }
 
 function extractFileNameFromPath(filePath) {

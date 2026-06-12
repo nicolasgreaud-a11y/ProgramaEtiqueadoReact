@@ -13,12 +13,26 @@ export const localImplementation = {
     await dataset.addImages(fileList);
   },
   async uploadFolder(dataset, fileList) {
+    if (dataset.hasPendingNasImport) {
+      return dataset.linkNasBaseFolder(fileList);
+    }
+    if (window.desktopApp?.isDesktop && fileList?.files) {
+      await dataset.addImageDirectory(fileList);
+      return;
+    }
     if (window.desktopApp?.isDesktop && Array.isArray(fileList)) {
       await dataset.addImagePaths(fileList);
       return;
     }
+    await dataset.addImages(fileList);
+  },
+  async uploadSubfolder(dataset, fileList) {
     if (dataset.hasPendingNasImport) {
       return dataset.linkNasBaseFolder(fileList);
+    }
+    if (window.desktopApp?.isDesktop && fileList?.files) {
+      await dataset.addImageDirectory(fileList);
+      return;
     }
     await dataset.addImages(fileList);
   },
